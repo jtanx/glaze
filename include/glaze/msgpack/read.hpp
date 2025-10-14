@@ -380,9 +380,11 @@ namespace glz
                ctx.error = error_code::unexpected_end;
                return;
             }
+            uint16_t uval;
+            std::memcpy(&uval, it, 2);
+            uval = from_big_endian(uval);
             int16_t val;
-            std::memcpy(&val, it, 2);
-            val = static_cast<int16_t>(from_big_endian(static_cast<uint16_t>(val)));
+            std::memcpy(&val, &uval, 2);
             it += 2;
             value = static_cast<V>(val);
             break;
@@ -392,9 +394,11 @@ namespace glz
                ctx.error = error_code::unexpected_end;
                return;
             }
+            uint32_t uval;
+            std::memcpy(&uval, it, 4);
+            uval = from_big_endian(uval);
             int32_t val;
-            std::memcpy(&val, it, 4);
-            val = static_cast<int32_t>(from_big_endian(static_cast<uint32_t>(val)));
+            std::memcpy(&val, &uval, 4);
             it += 4;
             value = static_cast<V>(val);
             break;
@@ -404,9 +408,11 @@ namespace glz
                ctx.error = error_code::unexpected_end;
                return;
             }
+            uint64_t uval;
+            std::memcpy(&uval, it, 8);
+            uval = from_big_endian(uval);
             int64_t val;
-            std::memcpy(&val, it, 8);
-            val = static_cast<int64_t>(from_big_endian(static_cast<uint64_t>(val)));
+            std::memcpy(&val, &uval, 8);
             it += 8;
             value = static_cast<V>(val);
             break;
@@ -607,16 +613,11 @@ namespace glz
             }
          }
 
-         // Resize container if needed
-         if constexpr (requires { value.resize(length); }) {
-            value.resize(length);
-         }
-         else if constexpr (requires { value.clear(); }) {
-            value.clear();
-         }
-
          // Read elements
          if constexpr (emplace_backable<T>) {
+            if constexpr (requires { value.clear(); }) {
+               value.clear();
+            }
             for (size_t i = 0; i < length; ++i) {
                using V = typename T::value_type;
                V element{};
@@ -626,6 +627,9 @@ namespace glz
             }
          }
          else if constexpr (accessible<T>) {
+            if constexpr (requires { value.resize(length); }) {
+               value.resize(length);
+            }
             for (size_t i = 0; i < length && i < value.size(); ++i) {
                parse<MSGPACK>::op<Opts>(value[i], ctx, it, end);
                if (bool(ctx.error)) return;

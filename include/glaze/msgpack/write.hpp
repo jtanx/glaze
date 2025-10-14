@@ -48,7 +48,11 @@ namespace glz
          b.resize(2 * k);
       }
 
-      const auto big_endian_value = to_big_endian(value);
+      // Use unsigned type for byte order conversion to avoid sign extension issues
+      using U = std::conditional_t<std::is_integral_v<T>, std::make_unsigned_t<T>, T>;
+      U uval;
+      std::memcpy(&uval, &value, n);
+      const auto big_endian_value = to_big_endian(uval);
       std::memcpy(&b[ix], &big_endian_value, n);
       ix += n;
    }
@@ -288,25 +292,38 @@ namespace glz
       requires(glaze_object_t<T> || reflectable<T>)
    struct to<MSGPACK, T>
    {
+      static constexpr auto N = reflect<T>::size;
+
+      template <auto Opts, size_t I>
+      static consteval bool should_skip_field()
+      {
+         using V = field_t<T, I>;
+
+         if constexpr (std::same_as<V, hidden> || std::same_as<V, skip>) {
+            return true;
+         }
+         else if constexpr (is_member_function_pointer<V>) {
+            return !check_write_member_functions(Opts);
+         }
+         else {
+            return false;
+         }
+      }
+
+      template <auto Opts>
+      static consteval size_t count_to_write()
+      {
+         return []<size_t... I>(std::index_sequence<I...>) {
+            return (size_t{} + ... + (should_skip_field<Opts, I>() ? size_t{} : size_t{1}));
+         }(std::make_index_sequence<N>{});
+      }
+
       template <auto Opts>
       GLZ_ALWAYS_INLINE static void op(auto&& value, is_context auto&& ctx, auto&& b, auto&& ix)
       {
          using namespace msgpack;
 
-         static constexpr auto N = reflect<T>::size;
-
-         // Count non-skipped fields
-         constexpr auto count_fields = []() constexpr {
-            size_t count = 0;
-            for_each<N>([&]<size_t I>() {
-               if constexpr (!detail::should_skip_field<Opts, I, T>()) {
-                  ++count;
-               }
-            });
-            return count;
-         };
-
-         constexpr auto num_fields = count_fields();
+         constexpr auto num_fields = count_to_write<Opts>();
 
          // Write map header
          if constexpr (num_fields <= 15) {
@@ -323,7 +340,10 @@ namespace glz
 
          // Write fields
          for_each<N>([&]<size_t I>() {
-            if constexpr (!detail::should_skip_field<Opts, I, T>()) {
+            if constexpr (should_skip_field<Opts, I>()) {
+               return;
+            }
+            else {
                // Write key
                static constexpr auto key = get<I>(reflect<T>::keys);
                serialize<MSGPACK>::op<Opts>(key, ctx, b, ix);

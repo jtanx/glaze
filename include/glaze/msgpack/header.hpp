@@ -13,20 +13,6 @@
 #include "glaze/core/context.hpp"
 #include "glaze/util/inline.hpp"
 
-namespace glz
-{
-   GLZ_ALWAYS_INLINE bool invalid_end(is_context auto& ctx, auto&& it, auto&& end) noexcept
-   {
-      if (it >= end) [[unlikely]] {
-         ctx.error = error_code::unexpected_end;
-         return true;
-      }
-      else [[likely]] {
-         return false;
-      }
-   }
-}
-
 namespace glz::msgpack
 {
    // MessagePack format type bytes

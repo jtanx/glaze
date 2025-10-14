@@ -12,6 +12,7 @@
 
 #include "glaze/msgpack/read.hpp"
 #include "glaze/msgpack/write.hpp"
+#include "glaze/json/write.hpp"
 #include "ut/ut.hpp"
 
 using namespace ut;
@@ -555,6 +556,59 @@ suite msgpack_edge_cases = [] {
       expect(!glz::write_msgpack(value, buffer));
 
       std::map<std::string, std::vector<std::map<std::string, int>>> read_value;
+      expect(!glz::read_msgpack(read_value, buffer));
+      expect(read_value == value);
+   };
+};
+
+suite msgpack_comparison_tests = [] {
+   "msgpack_vs_json_roundtrip"_test = [] {
+      my_struct original;
+      original.i = 123;
+      original.d = 45.67;
+      original.hello = "comparison test";
+      original.arr = {7, 8, 9};
+
+      // Serialize to MessagePack
+      std::string msgpack_buffer;
+      expect(!glz::write_msgpack(original, msgpack_buffer));
+
+      // Deserialize from MessagePack
+      my_struct from_msgpack;
+      expect(!glz::read_msgpack(from_msgpack, msgpack_buffer));
+
+      // Check values
+      expect(from_msgpack.i == original.i);
+      expect(std::abs(from_msgpack.d - original.d) < 0.001);
+      expect(from_msgpack.hello == original.hello);
+      expect(from_msgpack.arr == original.arr);
+
+      // Verify MessagePack is more compact than JSON for this case
+      std::string json_buffer;
+      expect(!glz::write_json(original, json_buffer));
+      expect(msgpack_buffer.size() < json_buffer.size());
+   };
+
+   "msgpack_binary_compactness"_test = [] {
+      // Test that MessagePack is indeed compact
+      std::vector<int> data(100, 42);
+      
+      std::string msgpack_buffer;
+      expect(!glz::write_msgpack(data, msgpack_buffer));
+      
+      std::string json_buffer;
+      expect(!glz::write_json(data, json_buffer));
+      
+      // MessagePack should be more compact than JSON
+      expect(msgpack_buffer.size() < json_buffer.size());
+   };
+
+   "msgpack_unicode_strings"_test = [] {
+      std::string value = "Hello 世界 🌍";
+      std::string buffer;
+      expect(!glz::write_msgpack(value, buffer));
+
+      std::string read_value;
       expect(!glz::read_msgpack(read_value, buffer));
       expect(read_value == value);
    };

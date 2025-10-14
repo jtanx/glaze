@@ -60,7 +60,7 @@ add_subdirectory(beve_test)
 add_subdirectory(cli_menu_test)
 add_subdirectory(compare_test)
 add_subdirectory(csv_test)
-add_subdirectory(eigen_test)
+# add_subdirectory(eigen_test) # Disabled due to network issues
 add_subdirectory(example_json)
 add_subdirectory(exceptions_test)
 add_subdirectory(inplace_vector)

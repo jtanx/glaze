@@ -14,6 +14,7 @@ namespace glz
    // User defined formats can be 65536 to 4294967296
    inline constexpr uint32_t INVALID = 0;
    inline constexpr uint32_t BEVE = 1;
+   inline constexpr uint32_t MSGPACK = 2;
    inline constexpr uint32_t JSON = 10;
    inline constexpr uint32_t JSON_PTR = 20;
    inline constexpr uint32_t NDJSON = 100; // new line delimited JSON

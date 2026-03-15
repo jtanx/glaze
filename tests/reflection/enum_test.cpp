@@ -1156,4 +1156,141 @@ suite random_enum_hash_tests = [] {
    "RandomI64Enum2_roundtrip"_test = [] { test_enum_roundtrip<RandomI64Enum2>(); };
 };
 
+// ============================================================================
+// Read aliases tests
+// ============================================================================
+
+enum class Color { Red, Green, Blue };
+
+template <>
+struct glz::meta<Color>
+{
+   using enum Color;
+   static constexpr auto value = enumerate("red", Red, "green", Green, "blue", Blue);
+   static constexpr auto read_aliases = enumerate("RED", Red, "r", Red, "GREEN", Green, "g", Green, "BLUE", Blue, "b", Blue);
+};
+
+enum class SingleAliased { Only };
+
+template <>
+struct glz::meta<SingleAliased>
+{
+   using enum SingleAliased;
+   static constexpr auto value = enumerate("only", Only);
+   static constexpr auto read_aliases = enumerate("ONLY", Only, "singleton", Only);
+};
+
+enum class TwoAliased { A, B };
+
+template <>
+struct glz::meta<TwoAliased>
+{
+   using enum TwoAliased;
+   static constexpr auto value = enumerate("a", A, "b", B);
+   static constexpr auto read_aliases = enumerate("alpha", A, "bravo", B);
+};
+
+struct ColorHolder {
+   Color color{};
+};
+
+suite read_aliases_tests = [] {
+   "read_aliases_primary_names"_test = [] {
+      // Primary names should still work
+      Color c{};
+      expect(!glz::read_json(c, R"("red")"));
+      expect(c == Color::Red);
+      expect(!glz::read_json(c, R"("green")"));
+      expect(c == Color::Green);
+      expect(!glz::read_json(c, R"("blue")"));
+      expect(c == Color::Blue);
+   };
+
+   "read_aliases_alias_names"_test = [] {
+      // Aliases should work for reading
+      Color c{};
+      expect(!glz::read_json(c, R"("RED")"));
+      expect(c == Color::Red);
+      expect(!glz::read_json(c, R"("r")"));
+      expect(c == Color::Red);
+      expect(!glz::read_json(c, R"("GREEN")"));
+      expect(c == Color::Green);
+      expect(!glz::read_json(c, R"("g")"));
+      expect(c == Color::Green);
+      expect(!glz::read_json(c, R"("BLUE")"));
+      expect(c == Color::Blue);
+      expect(!glz::read_json(c, R"("b")"));
+      expect(c == Color::Blue);
+   };
+
+   "read_aliases_write_uses_primary"_test = [] {
+      // Writing should use primary names only
+      std::string out;
+      Color c = Color::Red;
+      expect(!glz::write_json(c, out));
+      expect(out == R"("red")");
+
+      out.clear();
+      c = Color::Green;
+      expect(!glz::write_json(c, out));
+      expect(out == R"("green")");
+
+      out.clear();
+      c = Color::Blue;
+      expect(!glz::write_json(c, out));
+      expect(out == R"("blue")");
+   };
+
+   "read_aliases_unknown_still_errors"_test = [] {
+      // Unknown names should still produce an error
+      Color c{};
+      auto ec = glz::read_json(c, R"("unknown")");
+      expect(bool(ec));
+   };
+
+   "read_aliases_single_enum"_test = [] {
+      // Test with a single-value enum (N == 1 code path)
+      SingleAliased s{};
+      expect(!glz::read_json(s, R"("only")"));
+      expect(s == SingleAliased::Only);
+      expect(!glz::read_json(s, R"("ONLY")"));
+      expect(s == SingleAliased::Only);
+      expect(!glz::read_json(s, R"("singleton")"));
+      expect(s == SingleAliased::Only);
+   };
+
+   "read_aliases_two_element_enum"_test = [] {
+      // Test with a two-element enum
+      TwoAliased t{};
+      expect(!glz::read_json(t, R"("a")"));
+      expect(t == TwoAliased::A);
+      expect(!glz::read_json(t, R"("alpha")"));
+      expect(t == TwoAliased::A);
+      expect(!glz::read_json(t, R"("b")"));
+      expect(t == TwoAliased::B);
+      expect(!glz::read_json(t, R"("bravo")"));
+      expect(t == TwoAliased::B);
+   };
+
+   "read_aliases_roundtrip"_test = [] {
+      // Test roundtrip: write then read back
+      Color c = Color::Green;
+      std::string json;
+      expect(!glz::write_json(c, json));
+
+      Color c2{};
+      expect(!glz::read_json(c2, json));
+      expect(c2 == Color::Green);
+   };
+
+   "read_aliases_in_struct"_test = [] {
+      // Test aliases work when enum is a struct member
+      ColorHolder s{};
+      expect(!glz::read_json(s, R"({"color":"RED"})"));
+      expect(s.color == Color::Red);
+      expect(!glz::read_json(s, R"({"color":"green"})"));
+      expect(s.color == Color::Green);
+   };
+};
+
 int main() { return 0; }

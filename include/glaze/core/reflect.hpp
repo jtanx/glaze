@@ -924,6 +924,35 @@ namespace glz
       return std::array<U, sizeof...(I)>{static_cast<U>(glz::get<I>(reflect<T>::values))...};
    }(std::make_index_sequence<reflect<T>::size>{});
 
+   // Compile-time extraction of read_aliases keys and values for enums
+   template <class T>
+   struct enum_read_aliases_t
+   {
+      using V = std::decay_t<T>;
+
+      static constexpr auto raw = [] {
+         if constexpr (requires { V::glaze::read_aliases; }) {
+            return V::glaze::read_aliases.value;
+         }
+         else {
+            return meta<V>::read_aliases.value;
+         }
+      }();
+
+      using raw_t = std::decay_t<decltype(raw)>;
+      static constexpr auto value_indices = filter_indices<raw_t, not_object_key_type>();
+
+      static constexpr auto size = value_indices.size();
+
+      static constexpr auto values = []<size_t... I>(std::index_sequence<I...>) {
+         return tuple{get<value_indices[I]>(raw)...};
+      }(std::make_index_sequence<size>{});
+
+      static constexpr auto keys = []<size_t... I>(std::index_sequence<I...>) {
+         return std::array<sv, size>{sv{get<value_indices[I] - 1>(raw)}...};
+      }(std::make_index_sequence<size>{});
+   };
+
    template <class T, auto Info>
    struct enum_value_to_index
    {

@@ -2008,6 +2008,9 @@ namespace glz
             }
          }
 
+         // Save position for potential read_aliases fallback
+         [[maybe_unused]] const auto saved_it = it;
+
          if constexpr (N == 1) {
             decode_index<Opts, T, 0>(value, ctx, it, end);
          }
@@ -2019,13 +2022,16 @@ namespace glz
 
             if (index >= N) [[unlikely]] {
                ctx.error = error_code::unexpected_enum;
-               return;
+               if constexpr (!has_enum_read_aliases<T>) {
+                  return;
+               }
             }
-
-            // Simply assign the enum value - fold expression dispatch
-            [&]<size_t... Is>(std::index_sequence<Is...>) {
-               (void)(((index == Is ? (value = get<Is>(reflect<T>::values), true) : false) || ...));
-            }(std::make_index_sequence<N>{});
+            else {
+               // Simply assign the enum value - fold expression dispatch
+               [&]<size_t... Is>(std::index_sequence<Is...>) {
+                  (void)(((index == Is ? (value = get<Is>(reflect<T>::values), true) : false) || ...));
+               }(std::make_index_sequence<N>{});
+            }
          }
          else {
             static constexpr auto HashInfo = hash_info<T>;
@@ -2034,10 +2040,37 @@ namespace glz
 
             if (index >= N) [[unlikely]] {
                ctx.error = error_code::unexpected_enum;
-               return;
+               if constexpr (!has_enum_read_aliases<T>) {
+                  return;
+               }
             }
+            else {
+               visit<N>([&]<size_t I>() { decode_index<Opts, T, I>(value, ctx, it, end); }, index);
+            }
+         }
 
-            visit<N>([&]<size_t I>() { decode_index<Opts, T, I>(value, ctx, it, end); }, index);
+         // If primary lookup failed with unexpected_enum, try read_aliases
+         if constexpr (has_enum_read_aliases<T>) {
+            if (ctx.error == error_code::unexpected_enum) {
+               ctx.error = {};
+               it = saved_it;
+
+               skip_string_view(ctx, it, end);
+               if (bool(ctx.error)) [[unlikely]]
+                  return;
+               const sv key{saved_it, size_t(it - saved_it)};
+               ++it; // skip closing quote
+
+               using aliases = enum_read_aliases_t<T>;
+               for (size_t i = 0; i < aliases::size; ++i) {
+                  if (aliases::keys[i] == key) {
+                     visit<aliases::size>([&]<size_t I>() { value = get<I>(aliases::values); }, i);
+                     return;
+                  }
+               }
+
+               ctx.error = error_code::unexpected_enum;
+            }
          }
       }
    };

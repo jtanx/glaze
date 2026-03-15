@@ -1156,4 +1156,152 @@ suite random_enum_hash_tests = [] {
    "RandomI64Enum2_roundtrip"_test = [] { test_enum_roundtrip<RandomI64Enum2>(); };
 };
 
+// ============================================================================
+// Enum unknown_read tests (alias support)
+// ============================================================================
+
+enum class Color { Red, Green, Blue };
+
+template <>
+struct glz::meta<Color>
+{
+   using enum Color;
+   static constexpr auto value = enumerate("Red", Red, "Green", Green, "Blue", Blue);
+   static constexpr auto unknown_read = enumerate("red", Red, "green", Green, "blue", Blue, "R", Red, "G", Green, "B",
+                                                   Blue, "RED", Red, "GREEN", Green, "BLUE", Blue);
+};
+
+enum class Direction : int { Up = 0, Down = 1, Left = 2, Right = 3 };
+
+template <>
+struct glz::meta<Direction>
+{
+   using enum Direction;
+   static constexpr auto value = enumerate("Up", Up, "Down", Down, "Left", Left, "Right", Right);
+   static constexpr auto unknown_read = enumerate("up", Up, "down", Down, "left", Left, "right", Right);
+};
+
+// Enum without unknown_read to verify it still works normally
+enum class Shape { Circle, Square, Triangle };
+
+template <>
+struct glz::meta<Shape>
+{
+   using enum Shape;
+   static constexpr auto value = enumerate("Circle", Circle, "Square", Square, "Triangle", Triangle);
+};
+
+suite enum_unknown_read_tests = [] {
+   "enum_unknown_read_primary_names"_test = [] {
+      // Primary names should still work
+      Color c{};
+      expect(not glz::read_json(c, R"("Red")"));
+      expect(c == Color::Red);
+
+      expect(not glz::read_json(c, R"("Green")"));
+      expect(c == Color::Green);
+
+      expect(not glz::read_json(c, R"("Blue")"));
+      expect(c == Color::Blue);
+   };
+
+   "enum_unknown_read_alias_names"_test = [] {
+      // Alias names should work via unknown_read
+      Color c{};
+      expect(not glz::read_json(c, R"("red")"));
+      expect(c == Color::Red);
+
+      expect(not glz::read_json(c, R"("green")"));
+      expect(c == Color::Green);
+
+      expect(not glz::read_json(c, R"("blue")"));
+      expect(c == Color::Blue);
+
+      expect(not glz::read_json(c, R"("R")"));
+      expect(c == Color::Red);
+
+      expect(not glz::read_json(c, R"("G")"));
+      expect(c == Color::Green);
+
+      expect(not glz::read_json(c, R"("B")"));
+      expect(c == Color::Blue);
+
+      expect(not glz::read_json(c, R"("RED")"));
+      expect(c == Color::Red);
+
+      expect(not glz::read_json(c, R"("GREEN")"));
+      expect(c == Color::Green);
+
+      expect(not glz::read_json(c, R"("BLUE")"));
+      expect(c == Color::Blue);
+   };
+
+   "enum_unknown_read_invalid_name"_test = [] {
+      // Completely unknown names should still error
+      Color c{};
+      auto ec = glz::read_json(c, R"("purple")");
+      expect(bool(ec));
+   };
+
+   "enum_unknown_read_write_uses_primary"_test = [] {
+      // Writing should use the primary name, not aliases
+      Color c = Color::Red;
+      std::string json;
+      expect(not glz::write_json(c, json));
+      expect(json == "\"Red\"") << json;
+
+      c = Color::Green;
+      json.clear();
+      expect(not glz::write_json(c, json));
+      expect(json == "\"Green\"") << json;
+   };
+
+   "enum_unknown_read_roundtrip"_test = [] {
+      // Roundtrip with primary names
+      for (auto val : {Color::Red, Color::Green, Color::Blue}) {
+         std::string json;
+         expect(not glz::write_json(val, json));
+
+         Color parsed{};
+         expect(not glz::read_json(parsed, json));
+         expect(parsed == val);
+      }
+   };
+
+   "enum_unknown_read_direction"_test = [] {
+      Direction d{};
+      expect(not glz::read_json(d, R"("Up")"));
+      expect(d == Direction::Up);
+
+      expect(not glz::read_json(d, R"("up")"));
+      expect(d == Direction::Up);
+
+      expect(not glz::read_json(d, R"("down")"));
+      expect(d == Direction::Down);
+
+      expect(not glz::read_json(d, R"("left")"));
+      expect(d == Direction::Left);
+
+      expect(not glz::read_json(d, R"("right")"));
+      expect(d == Direction::Right);
+
+      auto ec = glz::read_json(d, R"("diagonal")");
+      expect(bool(ec));
+   };
+
+   "enum_without_unknown_read_still_works"_test = [] {
+      // Enums without unknown_read should work as before
+      Shape s{};
+      expect(not glz::read_json(s, R"("Circle")"));
+      expect(s == Shape::Circle);
+
+      expect(not glz::read_json(s, R"("Square")"));
+      expect(s == Shape::Square);
+
+      // Unknown names should still error
+      auto ec = glz::read_json(s, R"("circle")");
+      expect(bool(ec));
+   };
+};
+
 int main() { return 0; }

@@ -2008,7 +2008,60 @@ namespace glz
             }
          }
 
-         if constexpr (N == 1) {
+         if constexpr (has_unknown_reader<T>) {
+            // When unknown_read is available, extract the key first for alias fallback
+            auto key_start = it;
+            skip_string_view(ctx, it, end);
+            if (bool(ctx.error)) [[unlikely]]
+               return;
+            const sv key{key_start, size_t(it - key_start)};
+            ++it; // skip closing quote
+
+            // Try primary keys with linear search
+            static constexpr auto& keys = reflect<T>::keys;
+            bool found = false;
+            for (size_t i = 0; i < N; ++i) {
+               if (keys[i] == key) {
+                  [&]<size_t... Is>(std::index_sequence<Is...>) {
+                     (void)(((i == Is ? (value = get<Is>(reflect<T>::values), true) : false) || ...));
+                  }(std::make_index_sequence<N>{});
+                  found = true;
+                  break;
+               }
+            }
+
+            if (!found) {
+               // Try unknown_read aliases
+               constexpr auto& reader = meta_unknown_read_v<T>;
+               using ReaderType = meta_unknown_read_t<T>;
+               if constexpr (is_specialization_v<ReaderType, detail::Enum>) {
+                  constexpr auto& inner_tup = reader.value;
+                  using InnerTupleType = std::decay_t<decltype(inner_tup)>;
+                  constexpr auto val_indices = filter_indices<InnerTupleType, not_object_key_type>();
+                  constexpr auto num_aliases = val_indices.size();
+
+                  [&]<size_t... Is>(std::index_sequence<Is...>) {
+                     (void)((([&]() -> bool {
+                        constexpr auto val_idx = val_indices[Is];
+                        if constexpr (val_idx > 0 &&
+                                      is_object_key_type<glz::tuple_element_t<val_idx - 1, InnerTupleType>>) {
+                           if (sv(get<val_idx - 1>(inner_tup)) == key) {
+                              value = get<val_idx>(inner_tup);
+                              found = true;
+                              return true;
+                           }
+                        }
+                        return false;
+                     }()) || ...));
+                  }(std::make_index_sequence<num_aliases>{});
+               }
+
+               if (!found) [[unlikely]] {
+                  ctx.error = error_code::unexpected_enum;
+               }
+            }
+         }
+         else if constexpr (N == 1) {
             decode_index<Opts, T, 0>(value, ctx, it, end);
          }
          else if constexpr (check_linear_search(Opts)) {

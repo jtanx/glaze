@@ -2008,6 +2008,8 @@ namespace glz
             }
          }
 
+         [[maybe_unused]] const auto enum_start = it;
+
          if constexpr (N == 1) {
             decode_index<Opts, T, 0>(value, ctx, it, end);
          }
@@ -2019,13 +2021,16 @@ namespace glz
 
             if (index >= N) [[unlikely]] {
                ctx.error = error_code::unexpected_enum;
-               return;
+               if constexpr (!has_unknown_reader<T>) {
+                  return;
+               }
             }
-
-            // Simply assign the enum value - fold expression dispatch
-            [&]<size_t... Is>(std::index_sequence<Is...>) {
-               (void)(((index == Is ? (value = get<Is>(reflect<T>::values), true) : false) || ...));
-            }(std::make_index_sequence<N>{});
+            else {
+               // Simply assign the enum value - fold expression dispatch
+               [&]<size_t... Is>(std::index_sequence<Is...>) {
+                  (void)(((index == Is ? (value = get<Is>(reflect<T>::values), true) : false) || ...));
+               }(std::make_index_sequence<N>{});
+            }
          }
          else {
             static constexpr auto HashInfo = hash_info<T>;
@@ -2034,10 +2039,40 @@ namespace glz
 
             if (index >= N) [[unlikely]] {
                ctx.error = error_code::unexpected_enum;
-               return;
+               if constexpr (!has_unknown_reader<T>) {
+                  return;
+               }
             }
+            else {
+               visit<N>([&]<size_t I>() { decode_index<Opts, T, I>(value, ctx, it, end); }, index);
+            }
+         }
 
-            visit<N>([&]<size_t I>() { decode_index<Opts, T, I>(value, ctx, it, end); }, index);
+         if constexpr (has_unknown_reader<T>) {
+            if (ctx.error == error_code::unexpected_enum) {
+               ctx.error = {};
+               it = enum_start;
+               skip_string_view(ctx, it, end);
+               if (bool(ctx.error)) [[unlikely]]
+                  return;
+               const sv key{enum_start, size_t(it - enum_start)};
+               ++it;
+               if constexpr (not Opts.null_terminated) {
+                  if (it == end) {
+                     ctx.error = error_code::end_reached;
+                     return;
+                  }
+               }
+
+               constexpr auto& reader = meta_unknown_read_v<T>;
+               using ReaderType = meta_unknown_read_t<T>;
+               if constexpr (is_invocable_concrete<ReaderType> || is_function_ptr_invocable<ReaderType>) {
+                  reader(value, key);
+               }
+               else {
+                  static_assert(false_v<T>, "unknown_read type not handled for enums");
+               }
+            }
          }
       }
    };

@@ -1156,4 +1156,98 @@ suite random_enum_hash_tests = [] {
    "RandomI64Enum2_roundtrip"_test = [] { test_enum_roundtrip<RandomI64Enum2>(); };
 };
 
+// ============================================================================
+// unknown_read tests for enums
+// ============================================================================
+
+enum class Color : int { Red = 0, Green = 1, Blue = 2 };
+
+template <>
+struct glz::meta<Color>
+{
+   using enum Color;
+   static constexpr auto value = enumerate("Red", Red, "Green", Green, "Blue", Blue);
+   static constexpr auto unknown_read = [](Color& val, const std::string_view& key) {
+      if (key == "red" || key == "RED") {
+         val = Color::Red;
+      }
+      else if (key == "green" || key == "GREEN") {
+         val = Color::Green;
+      }
+      else if (key == "blue" || key == "BLUE") {
+         val = Color::Blue;
+      }
+   };
+};
+
+enum class SingleValue : int { Only = 42 };
+
+template <>
+struct glz::meta<SingleValue>
+{
+   using enum SingleValue;
+   static constexpr auto value = enumerate("Only", Only);
+   static constexpr auto unknown_read = [](SingleValue& val, const std::string_view& key) {
+      if (key == "only" || key == "ONLY") {
+         val = SingleValue::Only;
+      }
+   };
+};
+
+suite enum_unknown_read_tests = [] {
+   "known_values_still_work"_test = [] {
+      Color c{};
+      expect(not glz::read_json(c, R"("Red")"));
+      expect(c == Color::Red);
+      expect(not glz::read_json(c, R"("Green")"));
+      expect(c == Color::Green);
+      expect(not glz::read_json(c, R"("Blue")"));
+      expect(c == Color::Blue);
+   };
+
+   "unknown_read_fallback"_test = [] {
+      Color c{};
+      expect(not glz::read_json(c, R"("red")"));
+      expect(c == Color::Red);
+      expect(not glz::read_json(c, R"("RED")"));
+      expect(c == Color::Red);
+      expect(not glz::read_json(c, R"("green")"));
+      expect(c == Color::Green);
+      expect(not glz::read_json(c, R"("BLUE")"));
+      expect(c == Color::Blue);
+   };
+
+   "unknown_read_unhandled_no_error"_test = [] {
+      Color c{Color::Green};
+      // The unknown_read lambda doesn't set a value for "Purple",
+      // so value remains unchanged and no error is reported
+      expect(not glz::read_json(c, R"("Purple")"));
+      expect(c == Color::Green);
+   };
+
+   "single_element_enum_known"_test = [] {
+      SingleValue sv{};
+      expect(not glz::read_json(sv, R"("Only")"));
+      expect(sv == SingleValue::Only);
+   };
+
+   "single_element_enum_unknown_read"_test = [] {
+      SingleValue sv{};
+      expect(not glz::read_json(sv, R"("only")"));
+      expect(sv == SingleValue::Only);
+      expect(not glz::read_json(sv, R"("ONLY")"));
+      expect(sv == SingleValue::Only);
+   };
+
+   "enum_roundtrip_with_unknown_read"_test = [] {
+      Color c = Color::Blue;
+      std::string json;
+      expect(not glz::write_json(c, json));
+      expect(json == R"("Blue")");
+      Color parsed{};
+      expect(not glz::read_json(parsed, json));
+      expect(parsed == Color::Blue);
+   };
+};
+
 int main() { return 0; }

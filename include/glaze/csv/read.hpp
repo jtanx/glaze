@@ -372,10 +372,26 @@ namespace glz
 
             if (index >= N || reflect<T>::keys[index] != key) [[unlikely]] {
                ctx.error = error_code::unexpected_enum;
-               return;
+               if constexpr (!has_enum_read_aliases<T>) {
+                  return;
+               }
             }
+            else {
+               visit<N>([&]<size_t I>() { value = get<I>(reflect<T>::values); }, index);
+            }
+         }
 
-            visit<N>([&]<size_t I>() { value = get<I>(reflect<T>::values); }, index);
+         if constexpr (has_enum_read_aliases<T>) {
+            if (ctx.error == error_code::unexpected_enum) {
+               using aliases = enum_read_aliases_t<T>;
+               for (size_t i = 0; i < aliases::size; ++i) {
+                  if (aliases::keys[i] == key) {
+                     ctx.error = {};
+                     visit<aliases::size>([&]<size_t I>() { value = get<I>(aliases::values); }, i);
+                     return;
+                  }
+               }
+            }
          }
       }
    };

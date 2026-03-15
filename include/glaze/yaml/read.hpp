@@ -2204,20 +2204,37 @@ namespace glz
 
             if (index >= N) [[unlikely]] {
                ctx.error = error_code::unexpected_enum;
-               return;
+               if constexpr (!has_enum_read_aliases<T>) {
+                  return;
+               }
             }
+            else {
+               visit<N>(
+                  [&]<size_t I>() {
+                     static constexpr auto key = glz::get<I>(reflect<T>::keys);
+                     if (str == key) [[likely]] {
+                        value = glz::get<I>(reflect<T>::values);
+                     }
+                     else {
+                        ctx.error = error_code::unexpected_enum;
+                     }
+                  },
+                  index);
+            }
+         }
 
-            visit<N>(
-               [&]<size_t I>() {
-                  static constexpr auto key = glz::get<I>(reflect<T>::keys);
-                  if (str == key) [[likely]] {
-                     value = glz::get<I>(reflect<T>::values);
+         if constexpr (has_enum_read_aliases<T>) {
+            if (ctx.error == error_code::unexpected_enum) {
+               const sv key_sv{str.data(), str.size()};
+               using aliases = enum_read_aliases_t<T>;
+               for (size_t i = 0; i < aliases::size; ++i) {
+                  if (aliases::keys[i] == key_sv) {
+                     ctx.error = {};
+                     visit<aliases::size>([&]<size_t I>() { value = get<I>(aliases::values); }, i);
+                     break;
                   }
-                  else {
-                     ctx.error = error_code::unexpected_enum;
-                  }
-               },
-               index);
+               }
+            }
          }
 
          yaml::finalize_node_anchor(preamble.node_props, ctx, it);

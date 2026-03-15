@@ -951,22 +951,39 @@ namespace glz
 
             if (index >= N) [[unlikely]] {
                ctx.error = error_code::unexpected_enum;
-               return;
+               if constexpr (!has_enum_read_aliases<T>) {
+                  return;
+               }
             }
+            else {
+               // Use visit to convert runtime index to compile-time index
+               visit<N>(
+                  [&]<size_t I>() {
+                     // Verify the key matches (hash collision check)
+                     static constexpr auto key = glz::get<I>(reflect<T>::keys);
+                     if (n == key.size() && std::string_view(start, n) == key) [[likely]] {
+                        value = glz::get<I>(reflect<T>::values);
+                     }
+                     else {
+                        ctx.error = error_code::unexpected_enum;
+                     }
+                  },
+                  index);
+            }
+         }
 
-            // Use visit to convert runtime index to compile-time index
-            visit<N>(
-               [&]<size_t I>() {
-                  // Verify the key matches (hash collision check)
-                  static constexpr auto key = glz::get<I>(reflect<T>::keys);
-                  if (n == key.size() && std::string_view(start, n) == key) [[likely]] {
-                     value = glz::get<I>(reflect<T>::values);
+         if constexpr (has_enum_read_aliases<T>) {
+            if (ctx.error == error_code::unexpected_enum) {
+               const std::string_view key_sv{start, n};
+               using aliases = enum_read_aliases_t<T>;
+               for (size_t i = 0; i < aliases::size; ++i) {
+                  if (aliases::keys[i] == key_sv) {
+                     ctx.error = {};
+                     visit<aliases::size>([&]<size_t I>() { value = get<I>(aliases::values); }, i);
+                     return;
                   }
-                  else {
-                     ctx.error = error_code::unexpected_enum;
-                  }
-               },
-               index);
+               }
+            }
          }
       }
    };
